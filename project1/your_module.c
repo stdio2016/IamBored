@@ -34,6 +34,11 @@ int your_module_init(void) {
     printk(KERN_INFO "Loading Module\n");
     INIT_LIST_HEAD(&mydata);
 
+    add_birthday(1, 2000, 1, 6);
+    add_birthday(2, 2001, 2, 12);
+    add_birthday(3, 2002, 3, 18);
+    add_birthday(4, 2003, 4, 24);
+    add_birthday(5, 2004, 5, 30);
     show_birthday();
     return 0;
 }
