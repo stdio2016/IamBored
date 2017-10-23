@@ -31,24 +31,50 @@ void *check_column(void *param) {
   return NULL;
 }
 
-void create_thread_to_solve_this() {
+void *check_block(void *param) {
+  int decode = *(int *) param;
+  int has = 0, r, c, i, j;
+  r = decode & 3;
+  c = decode >> 2;
+  for (i = 0; i < 3; i++) {
+    for (j = 0; j < 3; j++) {
+      int n = sudokuboard[r*3+i][c*3+j];
+      if ((has>>n & 1) == 1) {
+        return fail_check;
+      }
+      has |= 1<<n;
+    }
+  }
+  return NULL;
+}
+
+int param[9];
+int create_thread_to_solve_this() {
   pthread_t tid[11]; // 11 threads
   pthread_attr_t attr;
   pthread_attr_init(&attr);
 
   pthread_create(&tid[0], &attr, check_row, NULL);
   pthread_create(&tid[1], &attr, check_column, NULL);
+  int i, j;
+  for (i = 0; i < 3; i++) {
+    for (j = 0; j < 3; j++) {
+      int idx = i*3 + j;
+      param[idx] = i << 2 | j;
+      pthread_create(&tid[2 + idx], &attr, check_block, &param[idx]);
+    }
+  }
 
   void *result;
-  pthread_join(tid[0], &result);
-  if (result == fail_check) {
-    puts("row error");
-  }
-  pthread_join(tid[1], &result);
-  if (result == fail_check) {
-    puts("column error");
+  int yes = 1;
+  for (i = 0; i < 11; i++) {
+    pthread_join(tid[i], &result);
+    if (result == fail_check) {
+      yes = 0;
+    }
   }
   pthread_attr_destroy(&attr);
+  return yes;
 }
 
 int main(int argc, char *argv[])
@@ -88,6 +114,12 @@ int main(int argc, char *argv[])
     puts("false");
     return 0;
   }
-  create_thread_to_solve_this();
+  yes = create_thread_to_solve_this();
+  if (yes) {
+    puts("true");
+  }
+  else {
+    puts("false");
+  }
   return 0;
 }
