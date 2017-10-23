@@ -2,4 +2,4 @@ objs = sudokucheck.o
 sudokucheck: $(objs) -lpthread
 sudokucheck.o: sudokucheck.c
 clean:
-	@rm -rf $(objs)
+	@rm -rf sudokucheck $(objs)
