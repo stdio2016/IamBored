@@ -11,6 +11,7 @@ struct Trainer {
   int battleTime; // in seconds
   int remainBattles; // battles needed to win a badge
   sem_t readySem; // inform trainer that he can battle with The Gym Leader
+  sem_t battleSem; // to wait for battle to finish
 };
 
 struct Gym {
@@ -20,7 +21,6 @@ struct Gym {
   struct Trainer **seats;
   pthread_mutex_t seatMutex;
   sem_t wakeSem; // to wake up The Gym Leader
-  sem_t battleSem; // to wait for battle to finish
 };
 
 struct Gym *NctuGym;
@@ -82,8 +82,9 @@ void WaitGymLeader(struct Trainer *me) {
   sem_wait(&me->readySem);
 }
 
-void BattleGymLeader(struct Gym *gym) {
-  sem_wait(&gym->battleSem);
+void BattleGymLeader(struct Trainer *me, struct Gym *gym) {
+  waitSecs(me->battleTime);
+  sem_post(&me->battleSem);
 }
 
 void *RunTrainer(void *who) {
@@ -99,7 +100,7 @@ void *RunTrainer(void *who) {
         showMsg("The Trainer %s enters the Gym, waiting for The Gym Leader.\n", me->name);
       }
       WaitGymLeader(me);
-      BattleGymLeader(NctuGym);
+      BattleGymLeader(me, NctuGym);
       me->remainBattles--;
     }
     else {
@@ -139,9 +140,8 @@ void ChallengerLeave(struct Gym *gym) {
 
 void BattleChallenger(struct Gym *leader, struct Trainer *challenger) {
   sem_post(&challenger->readySem);
-  waitSecs(challenger->battleTime);
+  sem_wait(&challenger->battleSem);
   ChallengerLeave(leader);
-  sem_post(&leader->battleSem);
 }
 
 void *RunGym(void *where) {
@@ -156,6 +156,7 @@ void *RunGym(void *where) {
       BattleChallenger(me, p);
       showMsg("The battle with Trainer %s is over.\n", p->name);
       p = LookForChallenger(me);
+      if (p == &CloseGym) return NULL;
     }
   }
 }
@@ -168,11 +169,13 @@ struct Trainer *createTrainer(char *name, int trainTime, int battleTime, int bat
   one->battleTime = battleTime;
   one->remainBattles = battleCount;
   sem_init(&one->readySem, 0, 0);
+  sem_init(&one->battleSem, 0, 0);
   return one;
 }
 
 void destroyTrainer(struct Trainer *who) {
   sem_destroy(&who->readySem);
+  sem_destroy(&who->battleSem);
   free(who);
 }
 
@@ -184,7 +187,6 @@ struct Gym *createGym(int seatCount) {
   gym->seats = malloc(sizeof(struct Trainer *) * seatCount);
   pthread_mutex_init(&gym->seatMutex, NULL);
   sem_init(&gym->wakeSem, 0, 0);
-  sem_init(&gym->battleSem, 0, 0);
   return gym;
 }
 
@@ -192,7 +194,6 @@ void destroyGym(struct Gym *gym) {
   free(gym->seats);
   pthread_mutex_destroy(&gym->seatMutex);
   sem_destroy(&gym->wakeSem);
-  sem_destroy(&gym->battleSem);
   free(gym);
 }
 
