@@ -18,9 +18,10 @@ struct Gym {
   int seatCount;
   int firstSeat;
   int occupied;
-  struct Trainer **seats;
-  pthread_mutex_t seatMutex;
-  sem_t wakeSem; // to wake up The Gym Leader
+  struct Trainer **seats; // seats as a circular queue
+  pthread_mutex_t seatMutex; // to ensure mutual exclusion when the queue is updated
+  sem_t wakeSem; // wake up the gym leader
+  int sleeping; // is Gym Leader sleeping?
 };
 
 struct Gym *NctuGym;
@@ -58,6 +59,10 @@ void Train(struct Trainer *me) {
   waitSecs(me->trainTime);
 }
 
+void WakeUpGymLeader(struct Gym *gym) {
+  sem_post(&gym->wakeSem);
+}
+
 // return n-th in a queue, or 0 if no seats
 int FindSeatAndSit(struct Trainer *me, struct Gym *gym) {
   int seatCount = gym->seatCount;
@@ -68,23 +73,23 @@ int FindSeatAndSit(struct Trainer *me, struct Gym *gym) {
     if (i >= seatCount) i -= seatCount;
     gym->seats[i] = me;
     gym->occupied = occupied + 1;
+    if (gym->sleeping) { // wake up Gym Leader if he is sleeping
+      gym->sleeping = 0;
+      WakeUpGymLeader(gym);
+    }
   }
   pthread_mutex_unlock(&gym->seatMutex);
   if (occupied < seatCount) return occupied+1;
   return 0;
 }
 
-void WakeUpGymLeader(struct Gym *gym) {
-  sem_post(&gym->wakeSem);
-}
-
 void WaitGymLeader(struct Trainer *me) {
-  sem_wait(&me->readySem);
+  sem_wait(&me->readySem); // wait until gym leader is free
 }
 
 void BattleGymLeader(struct Trainer *me, struct Gym *gym) {
-  waitSecs(me->battleTime);
-  sem_post(&me->battleSem);
+  waitSecs(me->battleTime); // battle for some time
+  sem_post(&me->battleSem); // tell the gym leader to stop the battle
 }
 
 void *RunTrainer(void *who) {
@@ -94,7 +99,7 @@ void *RunTrainer(void *who) {
     int success = FindSeatAndSit(me, NctuGym);
     if (success) {
       if (success == 1) {
-        WakeUpGymLeader(NctuGym);
+        // first come, no need to wait
       }
       else {
         showMsg("The Trainer %s enters the Gym, waiting for The Gym Leader.\n", me->name);
@@ -113,7 +118,7 @@ void *RunTrainer(void *who) {
 
 // actions of a gym leader
 void GymLeaderSleep(struct Gym *leader) {
-  //showMsg("The Gym Leader takes a nap.\n");
+  showMsg("The Gym Leader takes a nap.\n");
   sem_wait(&leader->wakeSem);
 }
 
@@ -121,6 +126,9 @@ struct Trainer *LookForChallenger(struct Gym *gym) {
   pthread_mutex_lock(&gym->seatMutex);
   int first = gym->firstSeat;
   struct Trainer *p = gym->seats[first];
+  if (p == NULL) {
+    gym->sleeping = 1; // if no one is in the gym, the leader will take a nap
+  }
   pthread_mutex_unlock(&gym->seatMutex);
   return p;
 }
@@ -139,9 +147,9 @@ void ChallengerLeave(struct Gym *gym) {
 }
 
 void BattleChallenger(struct Gym *leader, struct Trainer *challenger) {
-  sem_post(&challenger->readySem);
-  sem_wait(&challenger->battleSem);
-  ChallengerLeave(leader);
+  sem_post(&challenger->readySem); // tell the trainer the gym leader is ready to battle
+  sem_wait(&challenger->battleSem); // battle until the trainer says stop
+  ChallengerLeave(leader); // remove the challenger from the seats (queue)
 }
 
 void *RunGym(void *where) {
@@ -187,6 +195,7 @@ struct Gym *createGym(int seatCount) {
   gym->seats = malloc(sizeof(struct Trainer *) * seatCount);
   pthread_mutex_init(&gym->seatMutex, NULL);
   sem_init(&gym->wakeSem, 0, 0);
+  gym->sleeping = 1;
   return gym;
 }
 
