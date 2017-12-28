@@ -260,6 +260,21 @@ int main(int argc, char *argv[])
   srand(time(NULL));
   for (i = 0; i < NUMBER_OF_RESOURCES; i++) {
     all[i] = available[i] = strtol(argv[i+1], NULL, 10);
+    if (all[i] > 99) {
+      printf("input number is too big\n");
+      return 1;
+    }
+    if (all[i] < 0) {
+      printf("input number is too small\n");
+      return 1;
+    }
+  }
+  for (i = 0; i < NUMBER_OF_RESOURCES; i++) {
+    if (all[i] != 0) break;
+  }
+  if (i == NUMBER_OF_RESOURCES) {
+    printf("input number is all zero\n");
+    return 1;
   }
   for (i = 0; i < NUMBER_OF_CUSTOMERS; i++) {
     int zero = NUMBER_OF_RESOURCES;
