@@ -2,12 +2,17 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <time.h>
-#include <stdarg.h>
 
 #define NUMBER_OF_CUSTOMERS 5
 #define NUMBER_OF_RESOURCES 3
 
-int available[NUMBER_OF_RESOURCES];
+pthread_mutex_t bankMutex;
+// access to rand may have data race
+pthread_mutex_t randMutex;
+
+pthread_t customers[NUMBER_OF_CUSTOMERS];
+
+int available[NUMBER_OF_RESOURCES], all[NUMBER_OF_RESOURCES];
 
 int maximum[NUMBER_OF_CUSTOMERS][NUMBER_OF_RESOURCES];
 
@@ -120,6 +125,10 @@ int requestResources(int customerNum, int request[]) {
     }
     return -3;
   }
+  struct timespec a;
+  a.tv_sec = 0;
+  a.tv_nsec = 1;
+  //nanosleep(&a, NULL);
 }
 
 /*
@@ -148,14 +157,56 @@ int releaseResources(int customerNum, int release[]) {
   return 1;
 }
 
+void showRequest(int customerNum, int request[], int code) {
+  int i;
+  printf("Request");
+  for (i = 0; i < NUMBER_OF_RESOURCES; i++)
+    printf(" %d", request[i]);
+  puts("");
+  printf("Request Code %d: ", code);
+  switch (code) {
+    case 3:
+      printf("customer %d's request succeeds & all customer finish\n", customerNum); break;
+    case 2:
+      printf("customer %d's request succeeds & finishes\n", customerNum); break;
+    case 1:
+      printf("customer %d's request succeeds\n", customerNum); break;
+    case 0:
+      printf("customer %d doesn't request\n", customerNum); break;
+    case -1:
+      printf("customer %d's request fails since request exceeds need\n", customerNum); break;
+    case -2:
+      printf("customer %d's request fails since request exceeds available\n", customerNum); break;
+    case -3:
+      printf("customer %d's request fails since the state is unsafe\n", customerNum); break;
+  }
+}
+
+void showRelease(int customerNum, int release[], int code) {
+  int i;
+  printf("Release");
+  for (i = 0; i < NUMBER_OF_RESOURCES; i++)
+    printf(" %d", release[i]);
+  puts("");
+  printf("Release Code %d: ", code);
+  switch (code) {
+    case 1:
+      printf("customer %d's release succeeds\n", customerNum); break;
+    case 0:
+      printf("customer %d doesn't release any resource\n", customerNum); break;
+    case -1:
+      printf("customer %d's release fails since release exceeds allocation\n", customerNum); break;
+  }
+}
+
 void printState() {
   puts("current state\n");
   puts("available");
-  printf("resources    %3d %3d %3d\n\n", available[0], available[1], available[2]);
+  printf("resources  %3d %3d %3d\n\n", available[0], available[1], available[2]);
   int i, j;
-  puts("            maximum     allocation  need");
+  puts("             maximum     allocation  need");
   for (i = 0; i < NUMBER_OF_CUSTOMERS; i++) {
-    printf("customer %d ", i);
+    printf("customer %d", i);
     for (j = 0; j < NUMBER_OF_RESOURCES; j++)
       printf(" %3d", maximum[i][j]);
     for (j = 0; j < NUMBER_OF_RESOURCES; j++)
@@ -164,16 +215,87 @@ void printState() {
       printf(" %3d", need[i][j]);
     puts("");
   }
+  puts("");
+}
+
+void *customerThread(void *param) {
+  int *idPtr = param;
+  int id = *idPtr;
+  int rndarr[NUMBER_OF_RESOURCES];
+  while (11) {
+    int i, good;
+    pthread_mutex_lock(&randMutex);
+    for (i = 0; i < NUMBER_OF_RESOURCES; i++) {
+      rndarr[i] = rand() % (all[i]+1);
+    }
+    pthread_mutex_unlock(&randMutex);
+    pthread_mutex_lock(&bankMutex);
+    good = requestResources(id, rndarr);
+    showRequest(id, rndarr, good);
+    printState();
+    pthread_mutex_unlock(&bankMutex);
+    // don't exit before releasing lock
+    if (good == 2 || good == 3) break;
+
+    pthread_mutex_lock(&randMutex);
+    for (i = 0; i < NUMBER_OF_RESOURCES; i++) {
+      rndarr[i] = rand() % (all[i]+1);
+    }
+    pthread_mutex_unlock(&randMutex);
+    pthread_mutex_lock(&bankMutex);
+    good = releaseResources(id, rndarr);
+    showRelease(id, rndarr, good);
+    printState();
+    pthread_mutex_unlock(&bankMutex);
+  }
+  free(param);
+  return NULL;
 }
 
 int main(int argc, char *argv[])
 {
+  if (argc < NUMBER_OF_RESOURCES + 1) {
+    printf("usage: %s <resource 1> <resource 2> <resource 3>\n", argv[0]);
+    return 1;
+  }
   // initialize
   pthread_attr_t attr;
   pthread_attr_init(&attr);
+  pthread_mutex_init(&bankMutex, NULL);
+  pthread_mutex_init(&randMutex, NULL);
+  // randomize
+  int i, j;
+  srand(time(NULL));
+  for (i = 0; i < NUMBER_OF_RESOURCES; i++) {
+    all[i] = available[i] = strtol(argv[i+1], NULL, 10);
+  }
+  for (i = 0; i < NUMBER_OF_CUSTOMERS; i++) {
+    int zero = NUMBER_OF_RESOURCES;
+    do {
+      zero = 0;
+      for (j = 0; j < NUMBER_OF_RESOURCES; j++) {
+        maximum[i][j] = rand() % (available[j]+1);
+        if (maximum[i][j] == 0) zero++;
+        allocation[i][j] = 0;
+        need[i][j] = maximum[i][j];
+      }
+    } while (zero == NUMBER_OF_RESOURCES) ;
+  }
+  // create thread
+  for (i = 0; i < NUMBER_OF_CUSTOMERS; i++) {
+    int *param = malloc(sizeof(int));
+    *param = i;
+    pthread_create(&customers[i], &attr, customerThread, param);
+  }
 
-
-
+  // wait
+  for (i = 0; i < NUMBER_OF_CUSTOMERS; i++) {
+    void *unused;
+    pthread_join(customers[i], &unused);
+  }
+  // finalize
+  pthread_mutex_destroy(&randMutex);
+  pthread_mutex_destroy(&bankMutex);
   pthread_attr_destroy(&attr);
   return 0;
 }
