@@ -1,3 +1,4 @@
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -208,11 +209,14 @@ void *customerThread(void *param) {
   int *idPtr = param;
   int id = *idPtr;
   int rndarr[NUMBER_OF_RESOURCES];
+  int *maxarr = all;
+  //maxarr = need[id];
+
   while (11) {
     int i, good;
     pthread_mutex_lock(&randMutex);
     for (i = 0; i < NUMBER_OF_RESOURCES; i++) {
-      rndarr[i] = rand() % (all[i]+1);
+      rndarr[i] = rand() % (maxarr[i]+1);
     }
     pthread_mutex_unlock(&randMutex);
     pthread_mutex_lock(&bankMutex);
@@ -222,10 +226,11 @@ void *customerThread(void *param) {
     pthread_mutex_unlock(&bankMutex);
     // don't exit before releasing lock
     if (good == 2 || good == 3) break;
+    sched_yield();
 
     pthread_mutex_lock(&randMutex);
     for (i = 0; i < NUMBER_OF_RESOURCES; i++) {
-      rndarr[i] = rand() % (all[i]+1);
+      rndarr[i] = rand() % (maxarr[i]+1);
     }
     pthread_mutex_unlock(&randMutex);
     pthread_mutex_lock(&bankMutex);
@@ -233,6 +238,7 @@ void *customerThread(void *param) {
     showRelease(id, rndarr, good);
     printState();
     pthread_mutex_unlock(&bankMutex);
+    sched_yield();
   }
   free(param);
   return NULL;
