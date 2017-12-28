@@ -22,16 +22,6 @@ int need[NUMBER_OF_CUSTOMERS][NUMBER_OF_RESOURCES];
 
 int finishCount = 0;
 
-// #include <pthread.h>
-// pthread_create
-// pthread_join
-
-// pthread_mutex_t someMutex;
-// pthread_mutex_init(&someMutex);
-// pthread_mutex_lock(&someMutex);
-// pthread_mutex_unlock(&someMutex);
-// pthread_mutex_destroy(&someMutex);
-
 int isSafeState() {
   int finish[NUMBER_OF_CUSTOMERS] = {0};
   int work[NUMBER_OF_RESOURCES];
@@ -125,10 +115,6 @@ int requestResources(int customerNum, int request[]) {
     }
     return -3;
   }
-  struct timespec a;
-  a.tv_sec = 0;
-  a.tv_nsec = 1;
-  //nanosleep(&a, NULL);
 }
 
 /*
